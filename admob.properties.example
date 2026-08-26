@@ -1,0 +1,23 @@
+# ============================================================================
+# AdMob production configuration
+# ----------------------------------------------------------------------------
+# 1. Copy this file to `admob.properties` in the project root (same folder as
+#    settings.gradle.kts). `admob.properties` should be gitignored so real IDs
+#    are never committed.
+# 2. Replace the placeholder values below with your real AdMob IDs from
+#    https://apps.admob.com (App ID, and ad unit IDs for banner/interstitial).
+# 3. When `admob.properties` is ABSENT or a key is blank, the build automatically
+#    falls back to Google's official TEST ad IDs, so the app always builds and
+#    runs with safe test ads. Never ship test IDs to production.
+#
+# Keys read by app/build.gradle.kts:
+#   appId          -> AdMob Application ID (also injected into AndroidManifest)
+#   bannerHome     -> Banner ad unit shown on the Home screen
+#   bannerHistory  -> Banner ad unit shown on the History screen
+#   interstitial   -> Interstitial ad unit shown after a successful conversion
+# ============================================================================
+
+appId=ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX
+bannerHome=ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX
+bannerHistory=ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX
+interstitial=ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX

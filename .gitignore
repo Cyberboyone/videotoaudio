@@ -1,0 +1,24 @@
+# Local config containing production secrets / machine-specific paths
+local.properties
+admob.properties
+
+# Signing keys — NEVER commit. Use GitHub Encrypted Secrets instead.
+*.jks
+*.keystore
+keystore*
+*.jks.b64
+*.keystore.b64
+
+# Build outputs
+.gradle/
+build/
+app/build/
+*.apk
+*.aar
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.DS_Store
