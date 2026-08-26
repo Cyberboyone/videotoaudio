@@ -25,3 +25,4 @@
     <string name="txt_sample_rate">Sample Rate</string>
     <string name="txt_channels">Channels</string>
     <string name="trim_range">Trim Range</string>
+</resources>
