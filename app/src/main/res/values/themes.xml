@@ -10,8 +10,7 @@
         <item name="colorSecondaryContainer">@color/secondary_container</item>
         <item name="colorOnSecondary">@color/on_secondary</item>
         <!-- Background colors. -->
-        <item name="colorBackground">@color/background</item>
-        <item name="colorBackgroundOverlay">@color/background_overlay</item>
+        <item name="android:colorBackground">@color/background</item>
         <item name="colorSurface">@color/surface</item>
         <item name="colorOnSurface">@color/on_surface</item>
         <item name="colorError">@color/error</item>
