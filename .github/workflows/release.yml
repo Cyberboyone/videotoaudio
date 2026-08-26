@@ -53,18 +53,12 @@ jobs:
 
       - name: Diagnose artifact reachability
         run: |
-          for pkg in ffmpeg-kit-full ffmpeg-kit-audio; do
-            for v in 6.0.LTS 6.0-2 6.0-2.LTS 6.0 6.0-1; do
+          echo "CONTROL androidx.core -> $(curl -s -o /dev/null -w '%{http_code}' https://repo1.maven.org/maven2/androidx/core/core-ktx/1.13.1/core-ktx-1.13.1.pom)"
+          for pkg in mobile-ffmpeg-full mobile-ffmpeg-audio mobile-ffmpeg-min; do
+            for v in 4.4.LTS 4.4; do
               url="https://repo1.maven.org/maven2/com/arthenica/$pkg/$v/$pkg-$v.pom"
               code=$(curl -s -o /dev/null -w "%{http_code}" "$url")
               echo "CENTRAL $pkg:$v -> $code"
-            done
-          done
-          for pkg in ffmpeg-kit-full ffmpeg-kit-audio; do
-            for v in 6.0.LTS 6.0-2; do
-              url="https://maven.arthenica.com/artifactory/ffmpeg-kit-android/com/arthenica/$pkg/$v/$pkg-$v.pom"
-              code=$(curl -s -o /dev/null -w "%{http_code}" "$url")
-              echo "ARTHENICA $pkg:$v -> $code"
             done
           done
 
