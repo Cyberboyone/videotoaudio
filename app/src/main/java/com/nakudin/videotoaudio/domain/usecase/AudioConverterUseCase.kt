@@ -4,7 +4,7 @@ import android.content.Context
 import com.nakudin.videotoaudio.model.ConversionRequest
 import com.nakudin.videotoaudio.model.ConversionResult
 
-/** Abstraction over the audio conversion engine (FFmpeg). */
+/** Abstraction over the on-device audio conversion engine (Android MediaCodec). */
 interface AudioConverter {
 
     /**

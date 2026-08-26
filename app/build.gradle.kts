@@ -131,12 +131,6 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
 
-    // FFmpeg Kit. The "min" package only bundles ffmpeg core (no external
-    // encoders), so it cannot encode OGG (libvorbis) or use libmp3lame for MP3.
-    // The "full" package adds lame + libvorbis + opus, which we require for
-    // MP3/OGG output. Hosted on Maven Central (reliable for CI builds).
-    implementation("com.arthenica:ffmpeg-kit-full:6.0-2")
-
     // Room (local conversion history).
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")

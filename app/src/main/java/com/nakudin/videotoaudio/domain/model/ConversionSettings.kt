@@ -1,11 +1,15 @@
 package com.nakudin.videotoaudio.domain
 
-/** Output audio format supported by the conversion engine. */
+/**
+ * Output audio format supported by the conversion engine.
+ * Note: OGG/Vorbis is intentionally not offered because Android ships no
+ * Vorbis encoder; MP3 is provided but falls back to a clear error on devices
+ * without an MP3 encoder.
+ */
 enum class OutputFormat {
     MP3,
     M4A,
-    WAV,
-    OGG
+    WAV
 }
 
 /** Audio bitrate options (in kbps). */
@@ -22,7 +26,6 @@ enum class Bitrate(val value: Int) {
         fun applicableFor(format: OutputFormat): List<Bitrate> = when (format) {
             OutputFormat.MP3, OutputFormat.M4A -> entries.toList()
             OutputFormat.WAV -> listOf(KBPS_128, KBPS_192, KBPS_320)
-            OutputFormat.OGG -> listOf(KBPS_64, KBPS_96, KBPS_128, KBPS_192)
         }
     }
 }
@@ -36,7 +39,6 @@ enum class SampleRate(val value: Int) {
         /** Sample rates applicable for the given output [format]. */
         fun applicableFor(format: OutputFormat): List<SampleRate> = when (format) {
             OutputFormat.MP3, OutputFormat.M4A, OutputFormat.WAV -> entries.toList()
-            OutputFormat.OGG -> listOf(Hz_44100, Hz_48000)
         }
     }
 }

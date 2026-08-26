@@ -3,12 +3,13 @@
 **Last updated:** 2026-08-26
 
 Video to Audio Converter ("the App") converts video files stored on your device
-into audio files (MP3, M4A, WAV, OGG). This policy explains what data the App
+into audio files (MP3, M4A, WAV). This policy explains what data the App
 handles and why.
 
 ## 1. Data we process on your device
 - **Video files you select.** When you choose a video, the App reads it and
-  extracts its audio track using a local FFmpeg engine. **The original video is
+  extracts its audio track using Android's built-in media engine
+  (MediaCodec / MediaExtractor / MediaMuxer). **The original video is
   never uploaded** and is never modified.
 - **Generated audio files.** The extracted audio is written to the App's
   private storage folder (`Android/data/com.nakudin.videotoaudio/...`). These

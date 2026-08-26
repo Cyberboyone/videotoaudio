@@ -998,7 +998,8 @@ fun PrivacyScreen(navController: NavController) {
 
             PolicyBlock(
                 "Local media processing",
-                "All video-to-audio conversion is performed entirely on your device using the FFmpeg library. " +
+                "All video-to-audio conversion is performed entirely on your device using Android's built-in " +
+                    "media engine (MediaCodec / MediaExtractor / MediaMuxer). " +
                     "Your selected videos and the audio produced from them are never uploaded to any server or " +
                     "transmitted over the network. The only network traffic initiated by the app is for advertising " +
                     "(see below)."
@@ -1058,9 +1059,9 @@ fun PrivacyScreen(navController: NavController) {
 
             PolicyBlock(
                 "Third-party software",
-                "FFmpeg-Kit performs audio processing locally and does not transmit data. Google Mobile Ads " +
-                    "provides advertising as described above. Standard AndroidX libraries are used for the user " +
-                    "interface and local storage."
+                "Audio processing uses Android's built-in media engine and is performed locally on your device; " +
+                    "it does not transmit data. Google Mobile Ads provides advertising as described above. " +
+                    "Standard AndroidX libraries are used for the user interface and local storage."
             )
 
             PolicyBlock(
@@ -1104,7 +1105,6 @@ private fun audioMimeType(path: String): String {
         "mp3" -> "audio/mpeg"
         "m4a" -> "audio/mp4"
         "wav" -> "audio/wav"
-        "ogg" -> "audio/ogg"
         else -> "audio/*"
     }
 }

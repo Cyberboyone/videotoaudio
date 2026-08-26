@@ -4,12 +4,13 @@ First production release of **Video to Audio Converter**.
 
 ## What it does
 Extract the audio track from a video on your device and save it as MP3, M4A,
-WAV, or OGG. All processing happens **on your device** — your videos are never
+or WAV. All processing happens **on your device** — your videos are never
 uploaded.
 
 ## Features
 - Pick a video from your device (MP4, MKV, MOV, AVI, and more).
-- Convert to **MP3 / M4A / WAV / OGG**.
+- Convert to **MP3 / M4A / WAV** (MP3 uses the device's native encoder; if a
+  device lacks an MP3 encoder, M4A is recommended).
 - Choose **bitrate**, **sample rate** (44.1 / 48 kHz), and **mono / stereo**.
 - Optional **trim** to extract just the part you want.
 - Built-in **audio player** with seek / play / pause / restart.

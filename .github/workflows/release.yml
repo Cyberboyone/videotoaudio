@@ -51,17 +51,6 @@ jobs:
           interstitial=${{ secrets.ADMOB_INTERSTITIAL }}
           EOF
 
-      - name: Diagnose artifact reachability
-        run: |
-          echo "CONTROL androidx.core -> $(curl -s -o /dev/null -w '%{http_code}' https://repo1.maven.org/maven2/androidx/core/core-ktx/1.13.1/core-ktx-1.13.1.pom)"
-          for pkg in mobile-ffmpeg-full mobile-ffmpeg-audio mobile-ffmpeg-min; do
-            for v in 4.4.LTS 4.4; do
-              url="https://repo1.maven.org/maven2/com/arthenica/$pkg/$v/$pkg-$v.pom"
-              code=$(curl -s -o /dev/null -w "%{http_code}" "$url")
-              echo "CENTRAL $pkg:$v -> $code"
-            done
-          done
-
       - name: Build release AAB and APK
         env:
           SIGNING_STORE_FILE: ${{ github.workspace }}/keystore.jks
