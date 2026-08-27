@@ -116,6 +116,8 @@ class MainActivity : androidx.activity.ComponentActivity() {
         MobileAds.initialize(this) {}
         setContent {
             val settingsViewModel: SettingsViewModel = viewModel()
+            val selectionVm: VideoSelectionViewModel = viewModel()
+            val conversionVm: ConversionViewModel = viewModel()
             val themeMode by settingsViewModel.themeMode.collectAsState()
             val darkTheme = when (themeMode) {
                 ThemeMode.SYSTEM -> isSystemInDarkTheme()
@@ -125,20 +127,20 @@ class MainActivity : androidx.activity.ComponentActivity() {
             MaterialTheme(
                 colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme()
             ) {
-                AppNavigation()
+                AppNavigation(selectionVm, conversionVm)
             }
         }
     }
 }
 
 @Composable
-fun AppNavigation() {
+fun AppNavigation(selectionVm: VideoSelectionViewModel, conversionVm: ConversionViewModel) {
     val navController = rememberNavController()
     NavHost(navController = navController, startDestination = "home") {
-        composable("home") { HomeScreen(navController) }
-        composable("videodetails") { VideoDetailsScreen(navController) }
-        composable("conversionsettings") { ConversionSettingsScreen(navController) }
-        composable("conversionprogress") { ConversionProgressScreen(navController) }
+        composable("home") { HomeScreen(navController, selectionVm) }
+        composable("videodetails") { VideoDetailsScreen(navController, selectionVm) }
+        composable("conversionsettings") { ConversionSettingsScreen(navController, selectionVm, conversionVm) }
+        composable("conversionprogress") { ConversionProgressScreen(navController, conversionVm) }
         composable(
             "conversionresult/{path}",
             arguments = listOf(navArgument("path") { type = NavType.StringType })
@@ -161,9 +163,8 @@ fun AppNavigation() {
 }
 
 @Composable
-fun HomeScreen(navController: NavController) {
+fun HomeScreen(navController: NavController, selectionVm: VideoSelectionViewModel) {
     val context = LocalContext.current
-    val selectionVm: VideoSelectionViewModel = viewModel()
     val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -207,8 +208,7 @@ fun HomeScreen(navController: NavController) {
 }
 
 @Composable
-fun VideoDetailsScreen(navController: NavController) {
-    val selectionVm: VideoSelectionViewModel = viewModel()
+fun VideoDetailsScreen(navController: NavController, selectionVm: VideoSelectionViewModel) {
     val video by selectionVm.selectedVideo.collectAsState()
 
     Scaffold(topBar = { AppTopBar("Video Details", onBack = { navController.popBackStack() }) }) { padding ->
@@ -255,9 +255,7 @@ fun DetailRow(label: String, value: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ConversionSettingsScreen(navController: NavController) {
-    val selectionVm: VideoSelectionViewModel = viewModel()
-    val conversionVm: ConversionViewModel = viewModel()
+fun ConversionSettingsScreen(navController: NavController, selectionVm: VideoSelectionViewModel, conversionVm: ConversionViewModel) {
     val settingsVm: SettingsViewModel = viewModel()
     val video by selectionVm.selectedVideo.collectAsState()
 
@@ -483,8 +481,7 @@ fun ConversionSettingsScreen(navController: NavController) {
 }
 
 @Composable
-fun ConversionProgressScreen(navController: NavController) {
-    val conversionVm: ConversionViewModel = viewModel()
+fun ConversionProgressScreen(navController: NavController, conversionVm: ConversionViewModel) {
     val state by conversionVm.state.collectAsState()
 
     LaunchedEffect(state) {
