@@ -107,6 +107,8 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.material3.IconButton
+import androidx.compose.foundation.layout.RowScope
 
 class MainActivity : androidx.activity.ComponentActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
@@ -163,7 +165,7 @@ fun HomeScreen(navController: NavController) {
     val context = LocalContext.current
     val selectionVm: VideoSelectionViewModel = viewModel()
     val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(arrayOf("video/*"))
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
             selectionVm.setSelectedUri(context, uri)
@@ -180,7 +182,7 @@ fun HomeScreen(navController: NavController) {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Button(onClick = { launcher.launch() }) {
+            Button(onClick = { launcher.launch(arrayOf("video/*")) }) {
                 IconLabel(Icons.Filled.FolderOpen, "Select Video")
             }
             Spacer(Modifier.height(16.dp))

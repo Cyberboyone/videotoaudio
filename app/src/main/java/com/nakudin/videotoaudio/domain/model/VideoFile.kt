@@ -1,4 +1,4 @@
-package com.nakudin.videotoaudio.domain
+package com.nakudin.videotoaudio.domain.model
 
 /** Model representing a video file selected from the device, with extractable metadata. */
 class VideoFile(

@@ -163,7 +163,6 @@ class AudioConverterRepository : AudioConverter {
 
                 val outIdx = decoder.dequeueOutputBuffer(info, TIMEOUT_US)
                 when {
-                    outIdx == MediaCodec.INFO_END_OF_STREAM -> outputDone = true
                     outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                         val f = decoder.outputFormat
                         pcmSampleRate = f.getInteger(MediaFormat.KEY_SAMPLE_RATE)
@@ -179,6 +178,9 @@ class AudioConverterRepository : AudioConverter {
                             pcm.write(bytes)
                         }
                         decoder.releaseOutputBuffer(outIdx, false)
+                        if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                            outputDone = true
+                        }
                     }
                 }
             }
@@ -222,7 +224,7 @@ class AudioConverterRepository : AudioConverter {
                         MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
                     )
                     encodeAndMux(
-                        encoder = { cfg ->
+                        encoder = {
                             encoder = MediaCodec.createEncoderByType(
                                 MediaFormat.MIMETYPE_AUDIO_AAC
                             ).also { enc ->
@@ -341,7 +343,7 @@ class AudioConverterRepository : AudioConverter {
     // (MP3). [encoder] lazily configures the encoder on first use.
     // ------------------------------------------------------------------
     private fun encodeAndMux(
-        configureEncoder: () -> Unit,
+        encoder: () -> Unit,
         getEncoder: () -> MediaCodec,
         releaseEncoder: () -> Unit,
         pcm: ByteArray,
@@ -353,7 +355,7 @@ class AudioConverterRepository : AudioConverter {
         getFos: () -> FileOutputStream?,
         setFos: (FileOutputStream?) -> Unit
     ) {
-        configureEncoder()
+        encoder()
         val enc = getEncoder()
         enc.start()
         val frameSize = channels * 2
@@ -392,7 +394,6 @@ class AudioConverterRepository : AudioConverter {
 
             val outIdx = enc.dequeueOutputBuffer(info, TIMEOUT_US)
             when {
-                outIdx == MediaCodec.INFO_END_OF_STREAM -> outputDone = true
                 outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                     if (muxer != null) {
                         trackIdx = muxer.addTrack(enc.outputFormat)
@@ -413,6 +414,9 @@ class AudioConverterRepository : AudioConverter {
                         muxer.writeSampleData(trackIdx, buf, info)
                     }
                     enc.releaseOutputBuffer(outIdx, false)
+                    if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                        outputDone = true
+                    }
                 }
             }
         }
