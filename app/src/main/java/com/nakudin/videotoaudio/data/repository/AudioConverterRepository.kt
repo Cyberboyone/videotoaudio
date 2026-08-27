@@ -401,7 +401,7 @@ class AudioConverterRepository : AudioConverter {
                     }
                 }
                 outIdx >= 0 -> {
-                    val buf = enc.getOutputBuffer(outIdx)!
+                    val buf = enc.getOutputBuffer(outIdx)!!
                     if (isMp3) {
                         val bytes = ByteArray(info.size)
                         buf.get(bytes)
