@@ -208,8 +208,7 @@ fun HomeScreen(navController: NavController) {
 
 @Composable
 fun VideoDetailsScreen(navController: NavController) {
-    val selectionVm: VideoSelectionViewModel = navController.getBackStackEntry("home")?.viewModel()
-        ?.let { it } ?: viewModel()
+    val selectionVm: VideoSelectionViewModel = viewModel()
     val video by selectionVm.selectedVideo.collectAsState()
 
     Scaffold(topBar = { AppTopBar("Video Details", onBack = { navController.popBackStack() }) }) { padding ->
