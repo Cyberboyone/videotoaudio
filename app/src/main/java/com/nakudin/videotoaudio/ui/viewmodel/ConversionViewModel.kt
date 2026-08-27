@@ -36,16 +36,20 @@ class ConversionViewModel(application: Application) : AndroidViewModel(applicati
     fun start(request: ConversionRequest) {
         _state.value = State.Preparing
         viewModelScope.launch {
-            val result = converter.convert(getApplication(), request) { progress ->
-                _state.value = State.Converting(progress)
-            }
-            _state.value = when (result) {
-                is ConversionResult.Success -> {
-                    recordHistory(request, result.outputFile, result.durationMs)
-                    State.Completed(result.outputFile)
+            try {
+                val result = converter.convert(getApplication(), request) { progress ->
+                    _state.value = State.Converting(progress)
                 }
-                is ConversionResult.Cancelled -> State.Cancelled
-                is ConversionResult.Error -> State.Failed(result.message)
+                _state.value = when (result) {
+                    is ConversionResult.Success -> {
+                        recordHistory(request, result.outputFile, result.durationMs)
+                        State.Completed(result.outputFile)
+                    }
+                    is ConversionResult.Cancelled -> State.Cancelled
+                    is ConversionResult.Error -> State.Failed(result.message)
+                }
+            } catch (t: Throwable) {
+                _state.value = State.Failed("Conversion failed: ${t.message ?: t.javaClass.simpleName}")
             }
         }
     }

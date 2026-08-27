@@ -322,7 +322,8 @@ class AudioConverterRepository : AudioConverter {
             val durationMs = (segDurationUs / 1000).coerceAtLeast(1)
             onProgress(100)
             ConversionResult.Success(outputFile.absolutePath, durationMs)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             runCatching {
                 decoder?.stop(); decoder?.release()
                 encoder?.stop(); encoder?.release()

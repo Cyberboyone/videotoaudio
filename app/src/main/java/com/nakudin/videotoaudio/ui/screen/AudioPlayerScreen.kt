@@ -42,11 +42,12 @@ fun AudioPlayerScreen(
 ) {
     // Scope the ViewModel to this destination so media resources are released
     // when the player screen is popped off the back stack.
-    val navBackStackEntry = requireNotNull(navController.currentBackStackEntry)
-    val viewModel: AudioPlayerViewModel = viewModel(
-        navBackStackEntry,
-        factory = AudioPlayerViewModel.Factory(filePath)
-    )
+    val navBackStackEntry = navController.currentBackStackEntry
+    val viewModel: AudioPlayerViewModel = if (navBackStackEntry != null) {
+        viewModel(navBackStackEntry, factory = AudioPlayerViewModel.Factory(filePath))
+    } else {
+        viewModel(factory = AudioPlayerViewModel.Factory(filePath))
+    }
     val state by viewModel.uiState.collectAsState()
 
     Scaffold(

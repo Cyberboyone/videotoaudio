@@ -578,7 +578,7 @@ fun ConversionResultScreen(navController: NavController, filePath: String) {
             val activity = context as? Activity
             LaunchedEffect(filePath) {
                 delay(800)
-                activity?.let { AdManager.showInterstitialIfEligible(it) }
+                runCatching { activity?.let { AdManager.showInterstitialIfEligible(it) } }
             }
 
             Text("Success!", style = MaterialTheme.typography.headlineSmall)
