@@ -51,13 +51,13 @@ jobs:
           interstitial=${{ secrets.ADMOB_INTERSTITIAL }}
           EOF
 
-      - name: Build release AAB and APK
+      - name: Build release AAB, release APK and debug APK
         env:
           SIGNING_STORE_FILE: ${{ github.workspace }}/keystore.jks
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
-        run: ./gradlew :app:bundleRelease :app:assembleRelease --no-daemon
+        run: ./gradlew :app:bundleRelease :app:assembleRelease :app:assembleDebug --no-daemon
 
       - name: Upload App Bundle (AAB)
         uses: actions/upload-artifact@v4
@@ -65,8 +65,14 @@ jobs:
           name: app-release-aab
           path: app/build/outputs/bundle/release/*.aab
 
-      - name: Upload APK
+      - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
           name: app-release-apk
           path: app/build/outputs/apk/release/*.apk
+
+      - name: Upload Debug APK (self-test builds)
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/*.apk

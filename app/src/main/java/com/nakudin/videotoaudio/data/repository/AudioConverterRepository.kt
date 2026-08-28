@@ -2,12 +2,12 @@ package com.nakudin.videotoaudio.data.repository
 
 import android.content.Context
 import android.media.MediaCodec
-import android.util.Log
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.os.Environment
 import android.os.StatFs
+import android.util.Log
 import com.nakudin.videotoaudio.domain.Channels
 import com.nakudin.videotoaudio.domain.OutputFormat
 import com.nakudin.videotoaudio.domain.usecase.AudioConverter
@@ -15,7 +15,6 @@ import com.nakudin.videotoaudio.model.ConversionRequest
 import com.nakudin.videotoaudio.model.ConversionResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
@@ -27,6 +26,12 @@ import java.nio.ByteBuffer
  * Pipeline: extract the audio track -> decode to 16-bit PCM -> (optionally)
  * resample / re-channel the PCM -> mux/encode to the requested container
  * (WAV = raw PCM, M4A = AAC in MP4, MP3 = raw MP3 frames).
+ *
+ * The decoded PCM is written to a temporary file on disk and streamed into
+ * the encoder in fixed-size chunks. The previously used in-memory
+ * [java.io.ByteArrayOutputStream] approach caused OutOfMemoryError on any
+ * but tiny inputs, because the full decoded audio (often 100+ MB) was held
+ * in the heap at once.
  *
  * OGG/Vorbis is intentionally not supported because Android ships no
  * Vorbis encoder; MP3 is attempted and falls back to a clear error if the
@@ -49,7 +54,9 @@ class AudioConverterRepository : AudioConverter {
         var encoder: MediaCodec? = null
         var muxer: MediaMuxer? = null
         var fos: FileOutputStream? = null
+        var pcmOut: FileOutputStream? = null
         val outputFile: File
+        val pcmFile: File
         try {
             val inputPath = resolveInputPath(context, request.inputUri)
 
@@ -58,11 +65,13 @@ class AudioConverterRepository : AudioConverter {
             outputDir.mkdirs()
 
             outputFile = resolveUniqueOutputFile(outputDir, request)
+            pcmFile = File(context.cacheDir, "v2a_pcm_${System.currentTimeMillis()}.pcm")
 
             if (runCatching { StatFs(outputDir.absolutePath).availableBytes < 5_000_000L }
                     .getOrDefault(false)
             ) {
                 cleanupTempInput(inputPath)
+                cleanupPcm(pcmFile)
                 return@withContext ConversionResult.Error(
                     "Not enough free storage space to save the audio file."
                 )
@@ -82,6 +91,7 @@ class AudioConverterRepository : AudioConverter {
             }
             if (audioIdx < 0) {
                 cleanupTempInput(inputPath)
+                cleanupPcm(pcmFile)
                 return@withContext ConversionResult.Error(
                     "The selected video contains no audio track to extract."
                 )
@@ -116,21 +126,33 @@ class AudioConverterRepository : AudioConverter {
             }
             extractor.selectTrack(audioIdx)
 
-            // ---- Stage A: decode to PCM ----
+            val targetSampleRate = request.sampleRate?.value ?: srcSampleRate
+            val targetChannels = when (request.channels) {
+                Channels.MONO -> 1
+                Channels.STEREO -> 2
+            }
+            val needResample = (targetSampleRate != srcSampleRate) ||
+                (targetChannels != srcChannelCount)
+
+            // ---- Stage A: decode to PCM, streamed to a temp file ----
             stage = "decode"
-            Log.d("AudioConverter", "stage=decode mime=$srcMime rate=$srcSampleRate ch=$srcChannelCount")
+            Log.d(
+                "AudioConverter",
+                "stage=decode mime=$srcMime rate=$srcSampleRate ch=$srcChannelCount " +
+                    "targetRate=$targetSampleRate targetCh=$targetChannels"
+            )
             decoder = MediaCodec.createDecoderByType(srcMime)
             decoder.configure(trackFormat, null, null, 0)
             decoder.start()
 
-            val pcm = ByteArrayOutputStream()
-            var pcmSampleRate = srcSampleRate
-            var pcmChannels = srcChannelCount
-            var pcmFormatKnown = false
+            pcmOut = FileOutputStream(pcmFile)
             val info = MediaCodec.BufferInfo()
             var inputDone = false
             var outputDone = false
             var lastPts = 0L
+            var decodedBytes = 0L
+            var pcmSampleRate = srcSampleRate
+            var pcmChannels = srcChannelCount
 
             while (!outputDone && !cancelled) {
                 if (!inputDone) {
@@ -171,16 +193,22 @@ class AudioConverterRepository : AudioConverter {
                         val f = decoder.outputFormat
                         pcmSampleRate = f.getInteger(MediaFormat.KEY_SAMPLE_RATE)
                         pcmChannels = f.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-                        pcmFormatKnown = true
                     }
                     outIdx >= 0 -> {
-                        if (pcmFormatKnown) {
-                            val buf = decoder.getOutputBuffer(outIdx)!!
-                            val bytes = ByteArray(info.size)
-                            buf.get(bytes)
-                            buf.clear()
-                            pcm.write(bytes)
+                        val buf = decoder.getOutputBuffer(outIdx)!!
+                        val bytes = ByteArray(info.size)
+                        buf.get(bytes)
+                        buf.clear()
+                        val toWrite = if (needResample) {
+                            convertPcm(
+                                bytes, pcmSampleRate, pcmChannels,
+                                targetSampleRate, targetChannels
+                            )
+                        } else {
+                            bytes
                         }
+                        pcmOut.write(toWrite)
+                        decodedBytes += toWrite.size
                         decoder.releaseOutputBuffer(outIdx, false)
                         if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
                             outputDone = true
@@ -191,41 +219,34 @@ class AudioConverterRepository : AudioConverter {
             decoder.stop()
             decoder.release()
             decoder = null
+            pcmOut.close()
+            pcmOut = null
             extractor.release()
             extractor = null
 
             if (cancelled) {
                 cleanupTempInput(inputPath)
+                cleanupPcm(pcmFile)
                 return@withContext ConversionResult.Cancelled
             }
 
-            if (pcm.size() == 0) {
+            if (decodedBytes == 0L) {
                 cleanupTempInput(inputPath)
+                cleanupPcm(pcmFile)
                 return@withContext ConversionResult.Error(
                     "No audio data could be decoded from this video."
                 )
             }
+
             stage = "decoded"
-            Log.d("AudioConverter", "stage=decoded pcmBytes=${pcm.size()}")
+            Log.d("AudioConverter", "stage=decoded pcmBytes=$decodedBytes")
 
-            // ---- Resample / re-channel if requested ----
-            val targetSampleRate = request.sampleRate?.value ?: pcmSampleRate
-            val targetChannels = when (request.channels) {
-                Channels.MONO -> 1
-                Channels.STEREO -> 2
-            }
-            val pcmBytes = convertPcm(
-                pcm.toByteArray(), pcmSampleRate, pcmChannels,
-                targetSampleRate, targetChannels
-            )
-            stage = "resampled"
-            Log.d("AudioConverter", "stage=resampled pcmBytes=${pcmBytes.size} targetRate=$targetSampleRate ch=$targetChannels fmt=${request.outputFormat}")
-
-            // ---- Stage B: encode / write output ----
+            // ---- Stage B: encode / write output, streaming from the PCM file ----
+            val pcmBytesTotal = pcmFile.length()
             when (request.outputFormat) {
                 OutputFormat.WAV -> {
                     stage = "wav"
-                    writeWav(outputFile, pcmBytes, targetSampleRate, targetChannels)
+                    writeWav(outputFile, pcmFile, targetSampleRate, targetChannels)
                 }
                 OutputFormat.M4A -> {
                     stage = "m4a-encode"
@@ -261,14 +282,16 @@ class AudioConverterRepository : AudioConverter {
                         releaseEncoder = {
                             encoder?.stop(); encoder?.release(); encoder = null
                         },
-                        pcm = pcmBytes,
+                        pcmFile = pcmFile,
+                        pcmBytesTotal = pcmBytesTotal,
                         sampleRate = targetSampleRate,
                         channels = targetChannels,
                         muxer = muxer,
                         isMp3 = false,
                         outFile = outputFile,
                         getFos = { fos },
-                        setFos = { fos = it }
+                        setFos = { fos = it },
+                        onProgress = onProgress
                     )
                 }
                 OutputFormat.MP3 -> {
@@ -279,6 +302,7 @@ class AudioConverterRepository : AudioConverter {
                         )
                     } catch (e: Exception) {
                         cleanupTempInput(inputPath)
+                        cleanupPcm(pcmFile)
                         return@withContext ConversionResult.Error(
                             "This device does not provide an MP3 encoder. " +
                                 "Please choose M4A (AAC) instead.",
@@ -304,14 +328,16 @@ class AudioConverterRepository : AudioConverter {
                         releaseEncoder = {
                             encoder?.stop(); encoder?.release(); encoder = null
                         },
-                        pcm = pcmBytes,
+                        pcmFile = pcmFile,
+                        pcmBytesTotal = pcmBytesTotal,
                         sampleRate = targetSampleRate,
                         channels = targetChannels,
                         muxer = null,
                         isMp3 = true,
                         outFile = outputFile,
                         getFos = { fos },
-                        setFos = { fos = it }
+                        setFos = { fos = it },
+                        onProgress = onProgress
                     )
                 }
             }
@@ -322,7 +348,7 @@ class AudioConverterRepository : AudioConverter {
             fos?.close()
             fos = null
             stage = "finished"
-
+            cleanupPcm(pcmFile)
             cleanupTempInput(inputPath)
 
             if (!outputFile.exists() || outputFile.length() == 0L) {
@@ -342,6 +368,7 @@ class AudioConverterRepository : AudioConverter {
                 encoder?.stop(); encoder?.release()
                 muxer?.release()
                 fos?.close()
+                pcmOut?.close()
             }
             ConversionResult.Error("Conversion failed: ${e.message}", e)
         }
@@ -352,84 +379,100 @@ class AudioConverterRepository : AudioConverter {
     }
 
     // ------------------------------------------------------------------
-    // Encoding helper. Drives a MediaCodec encoder over the supplied PCM,
-    // either muxing into [muxer] (AAC) or writing raw frames to [outFile]
-    // (MP3). [encoder] lazily configures the encoder on first use.
+    // Encoding helper. Drives a MediaCodec encoder over the supplied PCM
+    // file (read in fixed-size chunks) and either muxes into [muxer]
+    // (AAC) or writes raw frames to [outFile] (MP3).
     // ------------------------------------------------------------------
     private fun encodeAndMux(
         encoder: () -> Unit,
         getEncoder: () -> MediaCodec,
         releaseEncoder: () -> Unit,
-        pcm: ByteArray,
+        pcmFile: File,
+        pcmBytesTotal: Long,
         sampleRate: Int,
         channels: Int,
         muxer: MediaMuxer?,
         isMp3: Boolean,
         outFile: File,
         getFos: () -> FileOutputStream?,
-        setFos: (FileOutputStream?) -> Unit
+        setFos: (FileOutputStream?) -> Unit,
+        onProgress: (Int) -> Unit
     ) {
         encoder()
         val enc = getEncoder()
         enc.start()
         val frameSize = channels * 2
         val info = MediaCodec.BufferInfo()
-        var offset = 0
+        var offset = 0L
         var inputDone = false
         var outputDone = false
         var muxerStarted = false
         var trackIdx = -1
-
-        while (!outputDone && !cancelled) {
-            if (!inputDone) {
-                val inIdx = enc.dequeueInputBuffer(TIMEOUT_US)
-                if (inIdx >= 0) {
-                    val inBuf = enc.getInputBuffer(inIdx)!!
-                    val remaining = pcm.size - offset
-                    if (remaining <= 0) {
-                        enc.queueInputBuffer(
-                            inIdx, 0, 0, 0,
-                            MediaCodec.BUFFER_FLAG_END_OF_STREAM
-                        )
-                        inputDone = true
-                    } else {
-                        var len = minOf(remaining, inBuf.remaining())
-                        len -= len % frameSize
-                        if (len == 0) len = minOf(remaining, inBuf.remaining())
-                        inBuf.put(pcm, offset, len)
-                        val ptsUs = (offset / frameSize.toDouble() / sampleRate * 1_000_000)
-                            .toLong().coerceAtLeast(0)
-                        enc.queueInputBuffer(inIdx, 0, len, ptsUs, 0)
-                        offset += len
-                        if (offset >= pcm.size) inputDone = true
+        val chunk = ByteArray(64 * 1024)
+        pcmFile.inputStream().use { fis ->
+            while (!outputDone && !cancelled) {
+                if (!inputDone) {
+                    val inIdx = enc.dequeueInputBuffer(TIMEOUT_US)
+                    if (inIdx >= 0) {
+                        val inBuf = enc.getInputBuffer(inIdx)!!
+                        val remaining = pcmBytesTotal - offset
+                        if (remaining <= 0) {
+                            enc.queueInputBuffer(
+                                inIdx, 0, 0, 0,
+                                MediaCodec.BUFFER_FLAG_END_OF_STREAM
+                            )
+                            inputDone = true
+                        } else {
+                            val toRead = minOf(remaining, inBuf.remaining().toLong()).toInt()
+                            val read = fis.read(chunk, 0, toRead)
+                            if (read <= 0) {
+                                enc.queueInputBuffer(
+                                    inIdx, 0, 0, 0,
+                                    MediaCodec.BUFFER_FLAG_END_OF_STREAM
+                                )
+                                inputDone = true
+                            } else {
+                                inBuf.put(chunk, 0, read)
+                                val ptsUs = (offset / frameSize.toDouble() / sampleRate * 1_000_000)
+                                    .toLong().coerceAtLeast(0)
+                                enc.queueInputBuffer(inIdx, 0, read, ptsUs, 0)
+                                offset += read
+                                if (pcmBytesTotal > 0) {
+                                    val pct = ((offset.toDouble() / pcmBytesTotal) * 100)
+                                        .toInt().coerceIn(0, 100)
+                                    onProgress(pct)
+                                }
+                                if (offset >= pcmBytesTotal) inputDone = true
+                            }
+                        }
                     }
                 }
-            }
 
-            val outIdx = enc.dequeueOutputBuffer(info, TIMEOUT_US)
-            when {
-                outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                    if (muxer != null) {
-                        trackIdx = muxer.addTrack(enc.outputFormat)
-                        muxer.start()
-                        muxerStarted = true
+                val outIdx = enc.dequeueOutputBuffer(info, TIMEOUT_US)
+                when {
+                    outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                        if (muxer != null) {
+                            trackIdx = muxer.addTrack(enc.outputFormat)
+                            muxer.start()
+                            muxerStarted = true
+                        }
                     }
-                }
-                outIdx >= 0 -> {
-                    val buf = enc.getOutputBuffer(outIdx)!!
-                    if (isMp3) {
-                        val bytes = ByteArray(info.size)
-                        buf.get(bytes)
-                        buf.clear()
-                        getFos()?.write(bytes)
-                    } else if (muxer != null && muxerStarted &&
-                        (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0
-                    ) {
-                        muxer.writeSampleData(trackIdx, buf, info)
-                    }
-                    enc.releaseOutputBuffer(outIdx, false)
-                    if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
-                        outputDone = true
+                    outIdx >= 0 -> {
+                        val buf = enc.getOutputBuffer(outIdx)!!
+                        if (isMp3) {
+                            val bytes = ByteArray(info.size)
+                            buf.get(bytes)
+                            buf.clear()
+                            getFos()?.write(bytes)
+                        } else if (muxer != null && muxerStarted &&
+                            (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0
+                        ) {
+                            muxer.writeSampleData(trackIdx, buf, info)
+                        }
+                        enc.releaseOutputBuffer(outIdx, false)
+                        if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                            outputDone = true
+                        }
                     }
                 }
             }
@@ -448,7 +491,8 @@ class AudioConverterRepository : AudioConverter {
     /**
      * Resample (linear interpolation) and re-channel [pcm] (16-bit interleaved)
      * from [srcRate]/[srcCh] to [dstRate]/[dstCh]. Returns the input unchanged
-     * when rates and channels already match.
+     * when rates and channels already match. Safe to call on independent
+     * contiguous chunks of the stream.
      */
     private fun convertPcm(
         pcm: ByteArray,
@@ -510,13 +554,15 @@ class AudioConverterRepository : AudioConverter {
         return if (v >= 0x8000) v - 0x10000 else v
     }
 
-    /** Write a 16-bit PCM WAV file with a standard 44-byte RIFF header. */
-    private fun writeWav(file: File, pcm: ByteArray, sampleRate: Int, channels: Int) {
+    /** Write a 16-bit PCM WAV file with a standard 44-byte RIFF header,
+     *  streaming the PCM payload from [pcmFile] so memory stays bounded. */
+    private fun writeWav(file: File, pcmFile: File, sampleRate: Int, channels: Int) {
+        val pcmSize = pcmFile.length()
         FileOutputStream(file).use { out ->
             val byteRate = sampleRate * channels * 2
             val blockAlign = channels * 2
             out.write("RIFF".toByteArray(Charsets.US_ASCII))
-            out.write(intLe(36 + pcm.size))
+            out.write(intLe((36 + pcmSize).toInt()))
             out.write("WAVE".toByteArray(Charsets.US_ASCII))
             out.write("fmt ".toByteArray(Charsets.US_ASCII))
             out.write(intLe(16))
@@ -527,8 +573,8 @@ class AudioConverterRepository : AudioConverter {
             out.write(shortLe(blockAlign))
             out.write(shortLe(16)) // bits per sample
             out.write("data".toByteArray(Charsets.US_ASCII))
-            out.write(intLe(pcm.size))
-            out.write(pcm)
+            out.write(intLe(pcmSize.toInt()))
+            pcmFile.inputStream().use { `in` -> `in`.copyTo(out) }
         }
     }
 
@@ -566,6 +612,10 @@ class AudioConverterRepository : AudioConverter {
         if (path.contains("v2a_input_") && path.contains("cache")) {
             runCatching { File(path).delete() }
         }
+    }
+
+    private fun cleanupPcm(file: File) {
+        runCatching { file.delete() }
     }
 
     /**
