@@ -411,9 +411,20 @@ class AudioConverterRepository : AudioConverter {
         var outputDone = false
         var muxerStarted = false
         var trackIdx = -1
+        var eosQueuedAt = 0L
         val chunk = ByteArray(64 * 1024)
         pcmFile.inputStream().use { fis ->
             while (!outputDone && !cancelled) {
+                // Safety guard: once the EOS input has been queued, allow the
+                // encoder a bounded window to flush. Some device encoders never
+                // surface the EOS output buffer, which would otherwise leave
+                // this loop spinning forever (progress stuck at 100%).
+                if (inputDone && eosQueuedAt > 0 &&
+                    System.currentTimeMillis() - eosQueuedAt > 5000L
+                ) {
+                    Log.w("AudioConverter", "encode loop: no EOS from encoder after 5s, finalizing")
+                    break
+                }
                 if (!inputDone) {
                     val inIdx = enc.dequeueInputBuffer(TIMEOUT_US)
                     if (inIdx >= 0) {
@@ -425,6 +436,7 @@ class AudioConverterRepository : AudioConverter {
                                 MediaCodec.BUFFER_FLAG_END_OF_STREAM
                             )
                             inputDone = true
+                            eosQueuedAt = System.currentTimeMillis()
                         } else {
                             val toRead = minOf(remaining, inBuf.remaining().toLong()).toInt()
                             val read = fis.read(chunk, 0, toRead)
@@ -434,6 +446,7 @@ class AudioConverterRepository : AudioConverter {
                                     MediaCodec.BUFFER_FLAG_END_OF_STREAM
                                 )
                                 inputDone = true
+                                eosQueuedAt = System.currentTimeMillis()
                             } else {
                                 inBuf.put(chunk, 0, read)
                                 val ptsUs = (offset / frameSize.toDouble() / sampleRate * 1_000_000)
