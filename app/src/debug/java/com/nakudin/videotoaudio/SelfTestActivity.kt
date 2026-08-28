@@ -41,10 +41,14 @@ class SelfTestActivity : Activity() {
                     return@launch
                 }
                 Log.i("SELF_TEST", "videoUri=$uri")
+                val fmtName = intent.getStringExtra("format")?.uppercase() ?: "M4A"
+                val fmt = OutputFormat.values().firstOrNull { it.name == fmtName }
+                    ?: OutputFormat.M4A
+                Log.i("SELF_TEST", "format=$fmt")
                 val repo = AudioConverterRepository()
                 val req = ConversionRequest(
                     inputUri = uri.toString(),
-                    outputFormat = OutputFormat.M4A,
+                    outputFormat = fmt,
                     bitrate = Bitrate.KBPS_128,
                     sampleRate = SampleRate.Hz_44100,
                     channels = Channels.STEREO,
