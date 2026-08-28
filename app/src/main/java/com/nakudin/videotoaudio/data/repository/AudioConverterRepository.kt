@@ -2,6 +2,7 @@ package com.nakudin.videotoaudio.data.repository
 
 import android.content.Context
 import android.media.MediaCodec
+import android.util.Log
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
@@ -42,6 +43,7 @@ class AudioConverterRepository : AudioConverter {
         onProgress: (Int) -> Unit
     ): ConversionResult = withContext(Dispatchers.IO) {
         cancelled = false
+        var stage = "init"
         var extractor: MediaExtractor? = null
         var decoder: MediaCodec? = null
         var encoder: MediaCodec? = null
@@ -115,6 +117,8 @@ class AudioConverterRepository : AudioConverter {
             extractor.selectTrack(audioIdx)
 
             // ---- Stage A: decode to PCM ----
+            stage = "decode"
+            Log.d("AudioConverter", "stage=decode mime=$srcMime rate=$srcSampleRate ch=$srcChannelCount")
             decoder = MediaCodec.createDecoderByType(srcMime)
             decoder.configure(trackFormat, null, null, 0)
             decoder.start()
@@ -201,6 +205,8 @@ class AudioConverterRepository : AudioConverter {
                     "No audio data could be decoded from this video."
                 )
             }
+            stage = "decoded"
+            Log.d("AudioConverter", "stage=decoded pcmBytes=${pcm.size()}")
 
             // ---- Resample / re-channel if requested ----
             val targetSampleRate = request.sampleRate?.value ?: pcmSampleRate
@@ -212,13 +218,17 @@ class AudioConverterRepository : AudioConverter {
                 pcm.toByteArray(), pcmSampleRate, pcmChannels,
                 targetSampleRate, targetChannels
             )
+            stage = "resampled"
+            Log.d("AudioConverter", "stage=resampled pcmBytes=${pcmBytes.size} targetRate=$targetSampleRate ch=$targetChannels fmt=${request.outputFormat}")
 
             // ---- Stage B: encode / write output ----
             when (request.outputFormat) {
                 OutputFormat.WAV -> {
+                    stage = "wav"
                     writeWav(outputFile, pcmBytes, targetSampleRate, targetChannels)
                 }
                 OutputFormat.M4A -> {
+                    stage = "m4a-encode"
                     muxer = MediaMuxer(
                         outputFile.absolutePath,
                         MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
@@ -262,6 +272,7 @@ class AudioConverterRepository : AudioConverter {
                     )
                 }
                 OutputFormat.MP3 -> {
+                    stage = "mp3-encode"
                     try {
                         encoder = MediaCodec.createEncoderByType(
                             MediaFormat.MIMETYPE_AUDIO_MPEG
@@ -310,6 +321,7 @@ class AudioConverterRepository : AudioConverter {
             muxer = null
             fos?.close()
             fos = null
+            stage = "finished"
 
             cleanupTempInput(inputPath)
 
@@ -324,6 +336,7 @@ class AudioConverterRepository : AudioConverter {
             ConversionResult.Success(outputFile.absolutePath, durationMs)
         } catch (e: Throwable) {
             if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.e("AudioConverter", "Conversion failed at stage=$stage", e)
             runCatching {
                 decoder?.stop(); decoder?.release()
                 encoder?.stop(); encoder?.release()
