@@ -4,48 +4,55 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.provider.MediaStore
 import android.util.Log
-import com.nakudin.videotoaudio.data.repository.AudioConverterRepository
 import com.nakudin.videotoaudio.domain.Bitrate
 import com.nakudin.videotoaudio.domain.Channels
 import com.nakudin.videotoaudio.domain.OutputFormat
 import com.nakudin.videotoaudio.domain.SampleRate
 import com.nakudin.videotoaudio.model.ConversionRequest
+import com.nakudin.videotoaudio.ui.viewmodel.ConversionViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 
 /**
  * Debug-only self-test hook. Never shipped in the release build.
  * A foreground Service / manifest receiver is blocked by Android's
- * background-execution limits, so this is a NoDisplay Activity that is
- * launched via `am start` and runs a full conversion, logging the result
- * (and any stage failure) under the SELF_TEST tag.
+ * background-execution limits, so this is a Translucent Activity launched
+ * via `am start` that runs a full conversion THROUGH THE REAL
+ * ConversionViewModel (the exact app path), logging every state transition
+ * under the SELF_TEST tag.
  *
  * Run it with:
  *   adb shell am start -n com.nakudin.videotoaudio/.SelfTestActivity \
- *       --es uri "/sdcard/Android/data/com.nakudin.videotoaudio/files/selftest_input.mp4"
+ *       --es uri "/sdcard/Android/data/com.nakudin.videotoaudio/files/selftest_input.mp4" \
+ *       --es format M4A
  */
 class SelfTestActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.i("SELF_TEST", "activity created; launching conversion")
+        Log.i("SELF_TEST", "activity created; launching conversion via ConversionViewModel")
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val uri = intent.getStringExtra("uri")?.let { Uri.parse(it) }
-                    ?: pickFirstVideo(this@SelfTestActivity)
-                if (uri == null) {
-                    Log.e("SELF_TEST", "NO_VIDEO: no video supplied or found")
-                    return@launch
-                }
+                    ?: run {
+                        Log.e("SELF_TEST", "NO_URI: pass --es uri")
+                        return@launch
+                    }
                 Log.i("SELF_TEST", "videoUri=$uri")
                 val fmtName = intent.getStringExtra("format")?.uppercase() ?: "M4A"
                 val fmt = OutputFormat.values().firstOrNull { it.name == fmtName }
                     ?: OutputFormat.M4A
                 Log.i("SELF_TEST", "format=$fmt")
-                val repo = AudioConverterRepository()
+
+                val vm = ConversionViewModel(application)
+                vm.state
+                    .onEach { s -> Log.i("SELF_TEST", "VM state=$s") }
+                    .launchIn(this)
+
                 val req = ConversionRequest(
                     inputUri = uri.toString(),
                     outputFormat = fmt,
@@ -56,36 +63,13 @@ class SelfTestActivity : Activity() {
                     trimEndSeconds = 0.0,
                     filename = "selftest"
                 )
-                val result = repo.convert(applicationContext, req) { p ->
-                    Log.i("SELF_TEST", "progress=$p")
-                }
-                Log.i("SELF_TEST", "RESULT=$result")
+                vm.start(req)
+                Log.i("SELF_TEST", "vm.start() returned (conversion running in ViewModel scope)")
             } catch (t: Throwable) {
                 Log.e("SELF_TEST", "EXCEPTION", t)
             } finally {
                 runOnUiThread { finish() }
             }
         }
-    }
-
-    private fun pickFirstVideo(context: android.content.Context): Uri? {
-        val proj = arrayOf(MediaStore.Video.Media._ID)
-        val q = context.contentResolver.query(
-            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-            proj,
-            null,
-            null,
-            "${MediaStore.Video.Media.DATE_ADDED} DESC"
-        )
-        q?.use { c ->
-            if (c.moveToFirst()) {
-                val id = c.getLong(c.getColumnIndexOrThrow(MediaStore.Video.Media._ID))
-                return Uri.withAppendedPath(
-                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                    id.toString()
-                )
-            }
-        }
-        return null
     }
 }
