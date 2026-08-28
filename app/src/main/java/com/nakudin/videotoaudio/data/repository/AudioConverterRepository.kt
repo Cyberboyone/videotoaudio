@@ -293,6 +293,7 @@ class AudioConverterRepository : AudioConverter {
                         setFos = { fos = it },
                         onProgress = onProgress
                     )
+                    Log.d("AudioConverter", "stage=m4a-encode-done")
                 }
                 OutputFormat.MP3 -> {
                     stage = "mp3-encode"
@@ -343,11 +344,13 @@ class AudioConverterRepository : AudioConverter {
             }
 
             muxer?.stop()
+            Log.d("AudioConverter", "stage=muxer-stopped")
             muxer?.release()
             muxer = null
             fos?.close()
             fos = null
             stage = "finished"
+            Log.d("AudioConverter", "stage=finished")
             cleanupPcm(pcmFile)
             cleanupTempInput(inputPath)
 
@@ -472,6 +475,7 @@ class AudioConverterRepository : AudioConverter {
                         enc.releaseOutputBuffer(outIdx, false)
                         if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
                             outputDone = true
+                            Log.d("AudioConverter", "encode loop outputDone=true")
                         }
                     }
                 }
