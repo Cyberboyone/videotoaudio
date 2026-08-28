@@ -50,7 +50,21 @@ class SelfTestActivity : Activity() {
 
                 val vm = ConversionViewModel(application)
                 vm.state
-                    .onEach { s -> Log.i("SELF_TEST", "VM state=$s") }
+                    .onEach { s ->
+                        Log.i("SELF_TEST", "VM state=$s")
+                        if (s is ConversionViewModel.State.Completed) {
+                            Log.i(
+                                "SELF_TEST",
+                                "VM COMPLETED path=${(s as ConversionViewModel.State.Completed).outputPath}"
+                            )
+                        }
+                        if (s is ConversionViewModel.State.Completed ||
+                            s is ConversionViewModel.State.Failed ||
+                            s is ConversionViewModel.State.Cancelled
+                        ) {
+                            runOnUiThread { finish() }
+                        }
+                    }
                     .launchIn(this)
 
                 val req = ConversionRequest(
@@ -67,7 +81,6 @@ class SelfTestActivity : Activity() {
                 Log.i("SELF_TEST", "vm.start() returned (conversion running in ViewModel scope)")
             } catch (t: Throwable) {
                 Log.e("SELF_TEST", "EXCEPTION", t)
-            } finally {
                 runOnUiThread { finish() }
             }
         }
