@@ -1,9 +1,12 @@
 package com.nakudin.videotoaudio
 
-import android.content.BroadcastReceiver
-import android.content.Context
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.Service
 import android.content.Intent
 import android.net.Uri
+import android.os.IBinder
 import android.provider.MediaStore
 import android.util.Log
 import com.nakudin.videotoaudio.data.repository.AudioConverterRepository
@@ -18,19 +21,41 @@ import kotlinx.coroutines.launch
 
 /**
  * Debug-only self-test hook. Never shipped in the release build.
- * Fire it with: adb shell am broadcast -a com.nakudin.videotoaudio.SELF_TEST
- * It picks the most recent video on the device and runs a full M4A
- * conversion, logging the result (and any stage failure) to logcat under
- * the SELF_TEST tag.
+ * A manifest BroadcastReceiver is blocked by Android's background-execution
+ * limits, so this is a foreground Service that runs a full conversion and
+ * logs the result (and any stage failure) under the SELF_TEST tag.
+ *
+ * Run it with:
+ *   adb shell am start-service -n com.nakudin.videotoaudio/.SelfTestService \
+ *       --es uri "/sdcard/Android/data/com.nakudin.videotoaudio/files/selftest_input.mp4"
  */
-class SelfTestReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        Log.i("SELF_TEST", "received broadcast; launching conversion")
+class SelfTestService : Service() {
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        val nm = getSystemService(NotificationManager::class.java)
+        val chan = NotificationChannel(
+            "selftest", "Self-test", NotificationManager.IMPORTANCE_LOW
+        )
+        nm.createNotificationChannel(chan)
+        val notif = Notification.Builder(this, "selftest")
+            .setContentTitle("Self-test running")
+            .setSmallIcon(android.R.drawable.ic_menu_compass)
+            .build()
+        startForeground(1, notif)
+        Log.i("SELF_TEST", "service created")
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.i("SELF_TEST", "startCommand; launching conversion")
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val uri = intent.getStringExtra("uri")?.let { Uri.parse(it) } ?: pickFirstVideo(context)
+                val uri = intent?.getStringExtra("uri")?.let { Uri.parse(it) }
+                    ?: pickFirstVideo(this@SelfTestService)
                 if (uri == null) {
-                    Log.e("SELF_TEST", "NO_VIDEO: no video found in MediaStore")
+                    Log.e("SELF_TEST", "NO_VIDEO: no video supplied or found")
                     return@launch
                 }
                 Log.i("SELF_TEST", "videoUri=$uri")
@@ -45,14 +70,17 @@ class SelfTestReceiver : BroadcastReceiver() {
                     trimEndSeconds = 0.0,
                     filename = "selftest"
                 )
-                val result = repo.convert(context.applicationContext, req) { p ->
+                val result = repo.convert(applicationContext, req) { p ->
                     Log.i("SELF_TEST", "progress=$p")
                 }
                 Log.i("SELF_TEST", "RESULT=$result")
             } catch (t: Throwable) {
                 Log.e("SELF_TEST", "EXCEPTION", t)
+            } finally {
+                stopSelf()
             }
         }
+        return START_NOT_STICKY
     }
 
     private fun pickFirstVideo(context: Context): Uri? {

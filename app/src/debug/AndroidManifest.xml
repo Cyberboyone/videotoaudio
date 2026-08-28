@@ -1,20 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Debug-only: allow the self-test receiver to read device videos. -->
+    <!-- Debug-only: allow the self-test service to read device videos. -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
     <application>
-        <receiver
-            android:name=".SelfTestReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="com.nakudin.videotoaudio.SELF_TEST" />
-            </intent-filter>
-        </receiver>
+        <service
+            android:name=".SelfTestService"
+            android:exported="true" />
     </application>
 
 </manifest>
